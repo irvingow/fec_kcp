@@ -11,7 +11,7 @@ RandomNumberGenerator *RandomNumberGenerator::GetInstance() {
     return &instance;
 }
 
-int32_t RandomNumberGenerator::GetRandomNumber(uint32_t &random_number) {
+int32_t RandomNumberGenerator::GetRandomNumber32(uint32_t &random_number) {
     int size = read(random_number_fd_, &random_number, sizeof(random_number));
     if (size != sizeof(random_number)) {
         LOG(ERROR) << "get random number failed error:" << strerror(errno);
@@ -20,10 +20,27 @@ int32_t RandomNumberGenerator::GetRandomNumber(uint32_t &random_number) {
     return 0;
 }
 
-int32_t RandomNumberGenerator::GetRandomNumberNonZero(uint32_t &random_number) {
-    int32_t ret = GetRandomNumber(random_number);
+int32_t RandomNumberGenerator::GetRandomNumberU32(uint32_t &random_number) {
+    int32_t ret = GetRandomNumber32(random_number);
     while (ret == 0 && random_number == 0) {
-        ret = GetRandomNumber(random_number);
+        ret = GetRandomNumber32(random_number);
+    }
+    return ret;
+}
+
+int32_t RandomNumberGenerator::GetRandomNumber16(uint16_t & random_number) {
+    int size = read(random_number_fd_, &random_number, sizeof(random_number));
+    if (size != sizeof(random_number)) {
+        LOG(ERROR) << "get random number failed error:" << strerror(errno);
+        return -1;
+    }
+    return 0;
+}
+
+int32_t RandomNumberGenerator::GetRandomNumberU16(uint16_t & random_number) {
+    int32_t ret = GetRandomNumber16(random_number);
+    while (ret == 0 && random_number == 0) {
+        ret = GetRandomNumber16(random_number);
     }
     return ret;
 }

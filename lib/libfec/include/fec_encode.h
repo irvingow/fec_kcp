@@ -30,7 +30,7 @@ class FecEncode{
   std::atomic_bool ready_for_fec_output_;
   int32_t data_pkg_num_;
   int32_t redundant_pkg_num_;
-  uint32_t seq;
+  uint16_t seq;
   const int32_t fec_encode_head_length_ = 7;
 };
 

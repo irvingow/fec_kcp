@@ -13,7 +13,8 @@ FecDecode::FecDecode(const int32_t &timeout_ms) : Sptr2TimeoutMap_(new TimeOutMa
 int32_t FecDecode::Input(char *input_data_pkg, int32_t length) {
     if (length <= fec_encode_head_length_ || input_data_pkg == nullptr)
         return -1;
-    uint32_t seq = read_u32(input_data_pkg);
+    uint16_t seq = read_u16(input_data_pkg);
+    uint16_t package_length = read_u16(input_data_pkg + 2);
     auto data_pkg_num = static_cast<int32_t>(input_data_pkg[4]);
     auto redundant_pkg_num = static_cast<int32_t>(input_data_pkg[5]);
     auto index = static_cast<int32_t>(input_data_pkg[6]);
@@ -48,7 +49,7 @@ int32_t FecDecode::Input(char *input_data_pkg, int32_t length) {
         free(data);
         return 0;
     }
-    seq2data_pkgs_length_[seq][index] = length;
+    seq2data_pkgs_length_[seq][index] = package_length;
     ++seq2cur_recv_data_pkg_num_[seq];
     if (seq2cur_recv_data_pkg_num_[seq] >= seq2data_pkgs_num_[seq]) {
         ///说明可以进行解码操作了

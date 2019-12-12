@@ -13,6 +13,10 @@ void write_u32(char * p,uint32_t l);
 
 uint32_t read_u32(char * p);
 
+void write_u16(char * p,uint16_t l);
+
+uint16_t read_u16(const char * p);
+
 int64_t getnowtime_ms();
 
 void print_char_array_in_byte(char *buf) ;

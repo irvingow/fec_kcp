@@ -15,10 +15,12 @@ FecEncode::FecEncode(const int32_t &data_pkg_num, const int32_t &redundant_pkg_n
       data_pkg_num_(data_pkg_num),
       redundant_pkg_num_(redundant_pkg_num) {
     RandomNumberGenerator *rg = RandomNumberGenerator::GetInstance();
-    auto ret = rg->GetRandomNumber(seq);
+    auto ret = rg->GetRandomNumberU16(seq);
     if (ret < 0) {
-        seq = 0;
+        seq = 1;
     }
+    if(seq >= 65521)
+        seq = 1;
     data_pkgs_length_.resize(data_pkg_num + redundant_pkg_num);
     data_pkgs_.resize(data_pkg_num + redundant_pkg_num);
 }
@@ -29,9 +31,10 @@ FecEncode::~FecEncode() {
 
 int32_t FecEncode::Input(const char *input_data_pkg, int32_t length) {
     std::lock_guard<std::mutex> lck(data_pkgs_mutex_);
-    if (cur_data_pkgs_num_ == data_pkg_num_ || input_data_pkg == nullptr) {
+    if (cur_data_pkgs_num_ == data_pkg_num_ )
         return -1;
-    }
+    if(input_data_pkg == nullptr || length <= 0 || length > 65535)
+        return -2;
     if (cur_data_pkgs_num_ == 0) {
         ready_for_fec_output_ = false;
         max_data_pkg_length_ = 0;
@@ -43,7 +46,8 @@ int32_t FecEncode::Input(const char *input_data_pkg, int32_t length) {
     data_pkgs_[cur_data_pkgs_num_] = (char *) malloc((length + 1) * sizeof(char));
     data_pkgs_length_[cur_data_pkgs_num_] = length;
     bzero(data_pkgs_[cur_data_pkgs_num_], length + 1);
-    write_u32(data_pkgs_[cur_data_pkgs_num_], seq);
+    write_u16(data_pkgs_[cur_data_pkgs_num_], seq);
+    write_u16(data_pkgs_[cur_data_pkgs_num_] + 2, length - fec_encode_head_length_);
     data_pkgs_[cur_data_pkgs_num_][4] = (unsigned char) data_pkg_num_;
     data_pkgs_[cur_data_pkgs_num_][5] = (unsigned char) redundant_pkg_num_;
     ///注意这里索引不能用0,用0的话可能导致在不注意的情况下字符串数据被截断,也就是将0作为结束的标志了,所以改成从1开始
@@ -63,7 +67,8 @@ int32_t FecEncode::Input(const char *input_data_pkg, int32_t length) {
                 free(data_pkgs_[i]);
                 data_pkgs_[i] = nullptr;
             } else {
-                write_u32(data[i], seq);
+                write_u16(data[i], seq);
+                write_u16(data[i] + 2, max_data_pkg_length_);
                 data[i][4] = (unsigned char) data_pkg_num_;
                 data[i][5] = (unsigned char) redundant_pkg_num_;
             }
@@ -83,6 +88,9 @@ int32_t FecEncode::Input(const char *input_data_pkg, int32_t length) {
         free(data);
         ready_for_fec_output_ = true;
         seq++;
+        ///65521 is the max prime number smaller than the max number in uint16_t
+        if(seq >= 65521)
+            seq = 1;
         return 1;
     }
     return 0;

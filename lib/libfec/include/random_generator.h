@@ -11,8 +11,10 @@
 class RandomNumberGenerator : public boost::noncopyable {
  public:
   static RandomNumberGenerator *GetInstance();
-  int32_t GetRandomNumber(uint32_t &random_number);
-  int32_t GetRandomNumberNonZero(uint32_t &random_number);
+  int32_t GetRandomNumber32(uint32_t &random_number);
+  int32_t GetRandomNumberU32(uint32_t &random_number);
+  int32_t GetRandomNumber16(uint16_t &random_number);
+  int32_t GetRandomNumberU16(uint16_t &random_number);
 
  protected:
   struct Obj_Creator {
