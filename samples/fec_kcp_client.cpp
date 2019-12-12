@@ -17,27 +17,6 @@ typedef struct {
   int socket_fd_;
 } connection_info_t;
 
-static inline const char *decode32u(const char *p, IUINT32 *l) {
-#if IWORDS_BIG_ENDIAN || IWORDS_MUST_ALIGN
-    *l = *(const unsigned char*)(p + 3);
-    *l = *(const unsigned char*)(p + 2) + (*l << 8);
-    *l = *(const unsigned char*)(p + 1) + (*l << 8);
-    *l = *(const unsigned char*)(p + 0) + (*l << 8);
-#else
-    *l = *(const IUINT32 *) p;
-#endif
-    p += 4;
-    return p;
-}
-
-int test(ikcpcb *kcp, const char *buf, long size) {
-    IUINT32 conv;
-    buf = decode32u(buf, &conv);
-    if (conv == 0)
-        return -10;
-    return conv;
-}
-
 FecEncode fec_encoder(2, 1);
 
 int udpout(const char *buf, int len, ikcpcb *kcp, void *user) {
@@ -111,7 +90,6 @@ void run(int32_t epoll_fd, int local_listen_fd, int remote_connected_fd, int tim
                         }
                         LOG(INFO) << "fec decode success data_pks size:" << data_pkgs.size();
                         for (size_t i = 0; i < data_pkgs.size(); ++i) {
-                            LOG(INFO)<<"test return:"<<test(kcp, data_pkgs[i], data_pkgs_length[i])<<" kcp->conv:"<<kcp->conv;
                             auto temp_ret = ikcp_input(kcp, data_pkgs[i], data_pkgs_length[i]);
                             LOG(INFO) << "kcp_input:" << data_pkgs[i] << " size:" << data_pkgs_length[i];
                             if (temp_ret < 0) {
