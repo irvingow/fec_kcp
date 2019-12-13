@@ -6,6 +6,14 @@
 #define FEC_KCP_COMMON_H
 
 #include <string>
+#include <netinet/in.h>
+
+typedef struct {
+  sockaddr_in addr_;
+  socklen_t slen_;
+  int socket_fd_;
+  bool isclient_;
+} connection_info_t;
 
 void print_char_array_in_byte(const char *buf) ;
 

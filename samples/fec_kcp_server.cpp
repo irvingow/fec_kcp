@@ -2,7 +2,6 @@
 #include "fec_encode.h"
 #include "fec_decode.h"
 #include <sys/types.h>
-#include <netinet/in.h>
 #include <unistd.h>
 #include <glog/logging.h>
 #include <sys/epoll.h>
@@ -10,12 +9,6 @@
 
 const std::string LOCAL_IP = "0.0.0.0";
 const int32_t LOCAL_PORT = 5555;
-
-typedef struct {
-  sockaddr_in addr;
-  socklen_t slen;
-  int socket_fd_;
-} connection_info_t;
 
 FecEncode fec_encoder(2, 1);
 
@@ -33,13 +26,12 @@ int udpout(const char *buf, int len, ikcpcb *kcp, void *user) {
         }
         for (size_t i = 0; i < data_pkgs.size(); ++i) {
             LOG(INFO) << "send kcp data to kcp client";
-            print_char_array_in_byte(data_pkgs[i] + 7);
             sendto(connect_info->socket_fd_,
                    data_pkgs[i],
                    data_pkgs_length[i],
                    0,
-                   (sockaddr *) &(connect_info->addr),
-                   connect_info->slen);
+                   (sockaddr *) &(connect_info->addr_),
+                   connect_info->slen_);
         }
     }
     return 0;
@@ -94,8 +86,8 @@ void run(int32_t epoll_fd, int local_listen_fd, int remote_connected_fd, int tim
                     sockaddr_in addr;
                     socklen_t slen = sizeof(addr);
                     recv_len = recvfrom(local_listen_fd, recv_buf, sizeof(recv_buf), 0, (sockaddr *) &addr, &slen);
-                    connect_info.addr = addr;
-                    connect_info.slen = slen;
+                    connect_info.addr_ = addr;
+                    connect_info.slen_ = slen;
                     if (recv_len < 0) {
                         LOG(ERROR) << "failed to recv data from local client error:%s" << strerror(errno);
                         continue;

@@ -11,12 +11,6 @@
 const std::string LOCAL_IP = "0.0.0.0";
 const int32_t LOCAL_PORT = 9999;
 
-typedef struct {
-  std::string remote_ip_;
-  int remote_port_;
-  int socket_fd_;
-} connection_info_t;
-
 FecEncode fec_encoder(2, 1);
 
 int udpout(const char *buf, int len, ikcpcb *kcp, void *user) {
