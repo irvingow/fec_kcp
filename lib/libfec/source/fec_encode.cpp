@@ -19,6 +19,7 @@ FecEncode::FecEncode(const int32_t &data_pkg_num, const int32_t &redundant_pkg_n
     if (ret < 0) {
         seq = 1;
     }
+    ///65521 is the max primer number in the range of 0-65535
     if(seq >= 65521)
         seq = 1;
     data_pkgs_length_.resize(data_pkg_num + redundant_pkg_num);
@@ -26,6 +27,7 @@ FecEncode::FecEncode(const int32_t &data_pkg_num, const int32_t &redundant_pkg_n
 }
 
 FecEncode::~FecEncode() {
+    std::lock_guard<std::mutex> lck(data_pkgs_mutex_);
     ResetDataPkgs();
 }
 
@@ -97,11 +99,26 @@ int32_t FecEncode::Input(const char *input_data_pkg, int32_t length) {
 }
 
 int32_t FecEncode::Output(std::vector<char *> &data_pkgs, std::vector<int32_t> &data_pkgs_length) {
+    std::lock_guard<std::mutex> lck(data_pkgs_mutex_);
     if (!ready_for_fec_output_) {
         return -1;
     }
     data_pkgs = data_pkgs_;
     data_pkgs_length = data_pkgs_length_;
+    cur_data_pkgs_num_ = 0;
+    return 0;
+}
+
+int32_t FecEncode::FlushUnEncodedData(std::vector<char *> & data_pkgs, std::vector<int32_t> & data_pkgs_length) {
+    std::lock_guard<std::mutex> lck(data_pkgs_mutex_);
+    if(cur_data_pkgs_num_ == data_pkg_num_)
+        return -1;
+    data_pkgs.resize(cur_data_pkgs_num_);
+    data_pkgs_length.resize(cur_data_pkgs_num_);
+    for(int i = 0; i < cur_data_pkgs_num_; ++i){
+        data_pkgs[i] = data_pkgs_[i] + fec_encode_head_length_;
+        data_pkgs_length[i] = data_pkgs_length_[i] - fec_encode_head_length_;
+    }
     cur_data_pkgs_num_ = 0;
     return 0;
 }

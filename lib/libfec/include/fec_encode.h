@@ -16,9 +16,13 @@ class FecEncode{
  public:
   FecEncode(const int32_t& data_pkg_num, const int32_t& redundant_pkg_num);
   ~FecEncode();
+  ///return 1 means that fec encode is ok, and user need to call Output to get encoded data.
   int32_t Input(const char* input_data_pkg, int32_t length);
   ///调用者必须手动从出参中复制数据,并不能直接使用返回的指针
-  int32_t Output(std::vector<char*>& data_pkgs, std::vector<int32_t>& data_pkg_length_);
+  int32_t Output(std::vector<char*>& data_pkgs, std::vector<int32_t>& data_pkgs_length);
+  ///output the unencoded data, note that you should copy the data from the pointers
+  ///that this function return, and the pointers will be freed next time you call @Input
+  int32_t FlushUnEncodedData(std::vector<char*>& data_pkgs, std::vector<int32_t>& data_pkg_length);
  private:
   void ResetDataPkgs();
  private:
