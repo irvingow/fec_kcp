@@ -5,50 +5,36 @@
 #include <unistd.h>
 #include <glog/logging.h>
 #include <sys/epoll.h>
+#include <fec_manager.h>
 #include "fec_kcp_common.h"
 
 const std::string LOCAL_IP = "0.0.0.0";
 const int32_t LOCAL_PORT = 5555;
 
-FecEncode fec_encoder(2, 1);
-
 int udpout(const char *buf, int len, ikcpcb *kcp, void *user) {
-    LOG(INFO)<<"kcp call udpout:"<<buf<<" size:"<<len;
-    auto connect_info = static_cast<connection_info_t *>(user);
-    auto encode_ret = fec_encoder.Input(buf, len);
-    if (encode_ret == 1) {
-        ///说明数据已经被全部编码完成,需要被发送
-        std::vector<char *> data_pkgs;
-        std::vector<int32_t> data_pkgs_length;
-        encode_ret = fec_encoder.Output(data_pkgs, data_pkgs_length);
-        if (encode_ret < 0) {
-            LOG(ERROR) << "failed to get decoded data from fec_encoder";
-        }
-        for (size_t i = 0; i < data_pkgs.size(); ++i) {
-            LOG(INFO) << "send kcp data to kcp client";
-            sendto(connect_info->socket_fd_,
-                   data_pkgs[i],
-                   data_pkgs_length[i],
-                   0,
-                   (sockaddr *) &(connect_info->addr_),
-                   connect_info->slen_);
-        }
-    }
-    return 0;
+    auto fec_encode_manger = static_cast<FecEncodeManager *>(user);
+    return fec_encode_manger->Input(buf, len);
 }
 
-void run(int32_t epoll_fd, int local_listen_fd, int remote_connected_fd, int timer_fd) {
+void run(int32_t epoll_fd,
+         int local_listen_fd,
+         int remote_connected_fd,
+         int kcp_update_timer_fd
+) {
     char recv_buf[2048] = {0};
     int recv_len = 0;
     const int max_events = 64;
     struct epoll_event events[max_events];
     ///创建encoder和decoder
-    FecDecode fec_decoder(1000);
+    FecDecode fec_decoder(10000);
     ///结束
     ///创建kcp相关结构
-    connection_info_t connect_info;
-    connect_info.socket_fd_ = local_listen_fd;
-    ikcpcb *kcp = ikcp_create(0x11111111, (void *) &connect_info);
+    std::shared_ptr<connection_info_t> sp_conn(new connection_info_t);
+    sp_conn->socket_fd_ = local_listen_fd;
+    sp_conn->isclient_ = false;
+    std::shared_ptr<FecEncode> sp_fec_encode(new FecEncode(2, 1));
+    FecEncodeManager fec_encode_manager(sp_conn, sp_fec_encode);
+    ikcpcb *kcp = ikcp_create(0x11111111, (void *) &fec_encode_manager);
     kcp->output = udpout;
     ///结束
     while (true) {
@@ -86,8 +72,8 @@ void run(int32_t epoll_fd, int local_listen_fd, int remote_connected_fd, int tim
                     sockaddr_in addr;
                     socklen_t slen = sizeof(addr);
                     recv_len = recvfrom(local_listen_fd, recv_buf, sizeof(recv_buf), 0, (sockaddr *) &addr, &slen);
-                    connect_info.addr_ = addr;
-                    connect_info.slen_ = slen;
+                    sp_conn->addr_ = addr;
+                    sp_conn->slen_ = slen;
                     if (recv_len < 0) {
                         LOG(ERROR) << "failed to recv data from local client error:%s" << strerror(errno);
                         continue;
@@ -107,12 +93,12 @@ void run(int32_t epoll_fd, int local_listen_fd, int remote_connected_fd, int tim
                             print_char_array_in_byte(data_pkgs[i]);
                             auto temp_ret = ikcp_input(kcp, data_pkgs[i], data_pkgs_length[i]);
                             if (temp_ret < 0) {
-                                LOG(WARNING) << "ikcp_input error ret:"<< temp_ret;
+                                LOG(WARNING) << "ikcp_input error ret:" << temp_ret;
                                 continue;
                             }
                         }
                     }
-                } else if (events[index].data.fd == timer_fd) {
+                } else if (events[index].data.fd == kcp_update_timer_fd) {
                     ///50ms的定时器被触发
                     ikcp_update(kcp, get_milliseconds());
                     int temp_ret = 1;
@@ -121,8 +107,14 @@ void run(int32_t epoll_fd, int local_listen_fd, int remote_connected_fd, int tim
                         temp_ret = ikcp_recv(kcp, recv_buf, sizeof(recv_buf));
                         if (temp_ret > 0) {
                             LOG(INFO) << "recv data from remote:" << recv_buf;
+                        } else {
+                            break;
                         }
-                        send(remote_connected_fd, recv_buf, temp_ret, 0);
+                        auto ret = send(remote_connected_fd, recv_buf, temp_ret, 0);
+                        if (ret < 0) {
+                            LOG(ERROR) << "failed to send data to remote server";
+                            break;
+                        }
                     }
                 }
             }
@@ -143,13 +135,20 @@ int main(int argc, char *argv[]) {
         LOG(ERROR) << "invalid remote_port, port should be in 0-65535";
         return -1;
     }
-    int epoll_fd = -1, local_listen_fd = -1, remote_connected_fd = -1, timerfd = -1;
+    int epoll_fd = -1, local_listen_fd = -1, remote_connected_fd = -1, kcp_update_timerfd = -1;
     auto ret =
-        init(remote_ip, remote_port, LOCAL_IP, LOCAL_PORT, epoll_fd, local_listen_fd, remote_connected_fd, timerfd);
+        init(remote_ip,
+             remote_port,
+             LOCAL_IP,
+             LOCAL_PORT,
+             epoll_fd,
+             local_listen_fd,
+             remote_connected_fd,
+             kcp_update_timerfd);
     if (ret < 0) {
         LOG(ERROR) << "failed to call init";
         return -1;
     }
-    run(epoll_fd, local_listen_fd, remote_connected_fd, timerfd);
+    run(epoll_fd, local_listen_fd, remote_connected_fd, kcp_update_timerfd);
     return 0;
 }
