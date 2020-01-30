@@ -14,7 +14,7 @@ const std::string LOCAL_IP = "0.0.0.0";
 const int32_t LOCAL_PORT = 9999;
 
 int udpout(const char *buf, int len, ikcpcb *kcp, void *user) {
-    auto fec_encoder_manager = static_cast<FecEncodeManager *> (user);
+    auto fec_encoder_manager = reinterpret_cast<FecEncodeManager *> (user);
     return fec_encoder_manager->Input(buf, len);
 }
 

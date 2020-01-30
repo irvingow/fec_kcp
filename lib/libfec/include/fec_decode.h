@@ -21,7 +21,7 @@ class FecDecode {
    * @return 如果返回值大于等于0,说明正常返回,返回值为0代表正常接收,返回值为1代表可以进行fec解码,
    * 调用Output函数可以获得解码之后的数据,如果小于0代表发生错误,一般因为输入数据包内容有问题
    */
-  int32_t Input(char *input_data_pkg, int32_t length);
+  int32_t Input(const char *input_data_pkg, int32_t length);
   /**
    * @param data_pkgs 输出数据组的指针
    * @param length 对应每个输出数据的长度

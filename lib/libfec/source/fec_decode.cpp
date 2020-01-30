@@ -10,7 +10,7 @@
 FecDecode::FecDecode(const int32_t &timeout_ms) : Sptr2TimeoutMap_(new TimeOutMap(timeout_ms)),
                                                   ready_seqs_nums_(0) {}
 
-int32_t FecDecode::Input(char *input_data_pkg, int32_t length) {
+int32_t FecDecode::Input(const char *input_data_pkg, int32_t length) {
     if (length <= fec_encode_head_length_ || input_data_pkg == nullptr)
         return -1;
     uint16_t seq = read_u16(input_data_pkg);
