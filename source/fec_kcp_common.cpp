@@ -134,17 +134,12 @@ int32_t init(const std::string &remote_ip,
         return -1;
     }
     ///结束
-    ///创建timer_fd,提醒间隔为10ms,将其加入到epoll监听池中
-    struct timespec now = {0, 0};
-    if (clock_gettime(CLOCK_REALTIME, &now) == -1) {
-        LOG(ERROR) << "failed to call clock_gettime error:" << strerror(errno);
-        return -1;
-    }
+    ///创建timer_fd,提醒间隔为10ms,将其加入到epoll监听池中;
     struct itimerspec temp = {0, 0, 0, 0};
-    temp.it_value.tv_sec += now.tv_sec;
-    temp.it_value.tv_nsec += now.tv_nsec + 50000000;
+    temp.it_value.tv_sec = 1;
+    temp.it_value.tv_nsec = 0;
     temp.it_interval.tv_nsec = 50000000;
-    timerfd = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK);
+    timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     if (timerfd == -1) {
         LOG(ERROR) << "failed to call timerfd_create error:" << strerror(errno);
         return -1;
