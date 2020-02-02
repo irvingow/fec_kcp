@@ -32,7 +32,7 @@ void run(int32_t epoll_fd,
     std::shared_ptr<connection_info_t> sp_conn(new connection_info_t);
     sp_conn->socket_fd_ = local_listen_fd;
     sp_conn->isclient_ = false;
-    std::shared_ptr<FecEncode> sp_fec_encode(new FecEncode(2, 1));
+    std::shared_ptr<FecEncode> sp_fec_encode(new FecEncode(2, 1, 5));
     FecEncodeManager fec_encode_manager(sp_conn, sp_fec_encode);
     ikcpcb *kcp = ikcp_create(0x11111111, (void *) &fec_encode_manager);
     kcp->output = udpout;
@@ -59,7 +59,7 @@ void run(int32_t epoll_fd,
                         LOG(ERROR) << "failed to recv data from remote server error:%s" << strerror(errno);
                         continue;
                     }
-                    LOG(INFO) << "recv data from remote server:" << recv_buf;
+                    LOG(INFO) << "recv data from remote server" ;
                     auto temp_ret = ikcp_send(kcp, recv_buf, recv_len);
                     if (temp_ret < 0) {
                         LOG(WARNING) << "ikcp_send error";
@@ -69,7 +69,7 @@ void run(int32_t epoll_fd,
                     LOG(INFO) << "recv data from kcp client";
                     ///接收到来自kcp client的数据
                     bzero(recv_buf, sizeof(recv_buf));
-                    sockaddr_in addr;
+                    sockaddr_in addr = {0};
                     socklen_t slen = sizeof(addr);
                     recv_len = recvfrom(local_listen_fd, recv_buf, sizeof(recv_buf), 0, (sockaddr *) &addr, &slen);
                     sp_conn->addr_ = addr;
@@ -78,30 +78,39 @@ void run(int32_t epoll_fd,
                         LOG(ERROR) << "failed to recv data from local client error:%s" << strerror(errno);
                         continue;
                     }
-                    auto decode_ret = fec_decoder.Input(recv_buf, recv_len);
-                    if (decode_ret == 1) {
+                    auto len = fec_decoder.Input(recv_buf, recv_len);
+                    while (len > 0) {
                         ///说明数据已经被全部解码完成,需要被传递给kcp来处理
-                        std::vector<char *> data_pkgs;
-                        std::vector<int32_t> data_pkgs_length;
-                        decode_ret = fec_decoder.Output(data_pkgs, data_pkgs_length);
-                        if (decode_ret < 0) {
+                        char *recvbuf = (char *) malloc(len + 1);
+                        if (recvbuf == nullptr) {
+                            LOG(ERROR) << "failed to call malloc";
+                            break;
+                        }
+                        bzero(recvbuf, len + 1);
+                        auto ret = fec_decoder.Output(recvbuf, len);
+                        LOG(INFO) << "success call decode data from server:";
+                        if (ret < 0) {
                             LOG(ERROR) << "failed to get decoded data from fec_decoder";
+                            free(recvbuf);
+                            break;
+                        }
+                        if (auto temp = ikcp_input(kcp, recvbuf, len) < 0) {
+                            len = ret;
+                            LOG(WARNING) << "ikcp_input error:" << temp;
+                            free(recvbuf);
                             continue;
                         }
-                        LOG(INFO) << "fec decode success data_pks size:" << data_pkgs.size();
-                        for (size_t i = 0; i < data_pkgs.size(); ++i) {
-                            print_char_array_in_byte(data_pkgs[i]);
-                            auto temp_ret = ikcp_input(kcp, data_pkgs[i], data_pkgs_length[i]);
-                            if (temp_ret < 0) {
-                                LOG(WARNING) << "ikcp_input error ret:" << temp_ret;
-                                continue;
-                            }
-                        }
+                        len = ret;
+                        free(recvbuf);
                     }
                 } else if (events[index].data.fd == kcp_update_timer_fd) {
                     ///50ms的定时器被触发
-                    ikcp_update(kcp, get_milliseconds());
-                    int temp_ret = 1;
+                    auto millisec = get_milliseconds();
+                    ikcp_update(kcp, millisec);
+                    auto temp_ret = sp_fec_encode->FecEncodeUpdateTime(millisec);
+                    if(temp_ret > 0)
+                        fec_encode_manager.FlushUnEncodedData();
+                    temp_ret = 1;
                     while (temp_ret > 0) {
                         bzero(recv_buf, sizeof(recv_buf));
                         temp_ret = ikcp_recv(kcp, recv_buf, sizeof(recv_buf));

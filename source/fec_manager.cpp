@@ -8,21 +8,12 @@
 #include <unistd.h>
 
 FecEncodeManager::FecEncodeManager(std::shared_ptr<connection_info_t> sp_conn,
-                                   std::shared_ptr<FecEncode> sp_fec_encoder, const int32_t &max_timeout_time_second)
+                                   std::shared_ptr<FecEncode> sp_fec_encoder)
     : sp_conn_(std::move(sp_conn)),
-      sp_fec_encoder_(std::move(sp_fec_encoder)),
-      max_timeout_time_second_(max_timeout_time_second) {
-    ///make sure that timeout time will not be zero
-    if (max_timeout_time_second <= 0)
-        max_timeout_time_second_ = 1;
-//    last_input_time_ = get_milliseconds();
-//    sp_check_timeout_thread_ = std::make_shared<std::thread>(std::bind(&FecEncodeManager::check_timeout, this));
-//    sp_check_timeout_thread_->detach();
-}
+      sp_fec_encoder_(std::move(sp_fec_encoder)) {}
 
 int32_t FecEncodeManager::Input(const char *data, const int32_t &length) {
     std::lock_guard<std::mutex> lck(fec_manager_mutex_);
-//    last_input_time_ = get_milliseconds();
     auto ret = sp_fec_encoder_->Input(data, length);
     if (ret < 0)
         return -1;
@@ -45,23 +36,7 @@ int32_t FecEncodeManager::Input(const char *data, const int32_t &length) {
     }
 }
 
-void FecEncodeManager::check_timeout() {
-    while (true) {
-        {
-            std::lock_guard<std::mutex> lck(fec_manager_mutex_);
-            int64_t now_time = get_milliseconds();
-            if ((now_time - last_input_time_) > 1000 * max_timeout_time_second_) {
-                auto ret = FlushUnEncodedData();
-                if (ret < 0)
-                    break;
-            }
-        }
-        sleep(max_timeout_time_second_);
-    }
-}
-
 int32_t FecEncodeManager::send_data(const char *data, const int32_t &length) {
-//    last_input_time_ = get_milliseconds();
     if (sp_conn_->isclient_) {
         auto ret = send(sp_conn_->socket_fd_, data, length, 0);
         return ret;

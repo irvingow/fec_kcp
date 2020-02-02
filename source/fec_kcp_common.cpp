@@ -13,18 +13,8 @@
 #include <sys/timerfd.h>
 #include "fec_kcp_common.h"
 
-void print_char_array_in_byte(const char *buf) {
-//    for (int32_t i = 0; i < strlen(buf); i++) {
-    for (int32_t i = 0; i < 4; i++) {
-        if (i > 0)
-            printf(":");
-        printf("%02X", buf[i]);
-    }
-    printf("\n");
-}
-
 int32_t AddEvent2Epoll(const int32_t &epoll_fd, const int32_t &fd, const uint32_t &events) {
-    struct epoll_event ev;
+    struct epoll_event ev = {0};
     ev.events = events;
     ev.data.fd = fd;
     auto ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev);

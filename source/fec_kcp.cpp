@@ -4,6 +4,7 @@
 
 #include <functional>
 #include "fec_kcp.h"
+#include <cstdlib>
 
 FecKcp::FecKcp(const int32_t &data_pkg_num,
                const int32_t &redundant_pkg_num,
@@ -23,24 +24,29 @@ int32_t FecKcp::UserDataSend(const char *buf, int32_t length) {
 
 int32_t FecKcp::DataInput(const char *buf, int32_t length) {
     ///we need to decode before we send the data to kcp
-    auto decode_ret = sp_fec_decode_->Input(buf, length);
-    if (decode_ret == 1) {
+    auto len = sp_fec_decode_->Input(buf, length);
+    int ret = 0;
+    while (len > 0) {
         ///说明数据已经被全部解码完成,需要被传递给kcp来处理
-        std::vector<char *> data_pkgs;
-        std::vector<int32_t> data_pkgs_length;
-        decode_ret = sp_fec_decode_->Output(data_pkgs, data_pkgs_length);
-        if (decode_ret < 0) {
-            return -1;
+        char *recv_buf = (char *) malloc(len + 1);
+        if (recv_buf == nullptr)
+            return -2;
+        bzero(recv_buf, len + 1);
+        ret = sp_fec_decode_->Output(recv_buf, len);
+        if (ret < 0) {
+            free(recv_buf);
+            break;
         }
-        for (size_t i = 0; i < data_pkgs.size(); ++i) {
-            auto temp_ret = ikcp_input(kcp_, data_pkgs[i], data_pkgs_length[i]);
-            if (temp_ret < 0) {
-                decode_ret = temp_ret;
-                continue;
-            }
+        auto temp_ret = ikcp_input(kcp_, recv_buf, len);
+        len = ret;
+        if (temp_ret < 0) {
+            ret = temp_ret;
+            free(recv_buf);
+            continue;
         }
+        free(recv_buf);
     }
-    return decode_ret;
+    return ret;
 }
 
 int32_t FecKcp::DataOutput(char *buf, int32_t length) {

@@ -5,10 +5,10 @@
 #ifndef LIBFEC_RANDOM_GENERATOR_H
 #define LIBFEC_RANDOM_GENERATOR_H
 
-#include <boost/noncopyable.hpp>
+#include <noncopyable.h>
 #include <cstdint>
 ///boost单例模式实现
-class RandomNumberGenerator : public boost::noncopyable {
+class RandomNumberGenerator : public noncopyable {
  public:
   static RandomNumberGenerator *GetInstance();
   int32_t GetRandomNumber32(uint32_t &random_number);

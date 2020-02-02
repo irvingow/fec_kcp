@@ -15,8 +15,6 @@ typedef struct {
   bool isclient_;
 } connection_info_t;
 
-void print_char_array_in_byte(const char *buf) ;
-
 int32_t AddEvent2Epoll(const int32_t &epoll_fd, const int32_t &fd, const uint32_t &events);
 
 int new_listen_socket(const std::string &ip, const size_t &port, int &fd);

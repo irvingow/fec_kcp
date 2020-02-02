@@ -7,17 +7,47 @@
 #include <cstring>
 #include "rs.h"
 
+int32_t FecDecodeOutputDataUnit::LargerMem(uint32_t expected_len) {
+    if (expected_len < max_len)
+        return 0;
+    free(data);
+    data = (char *) malloc(expected_len + 1);
+    if (data == nullptr)
+        return -1;
+    bzero(data, expected_len + 1);
+    max_len = expected_len;
+    return 0;
+}
+
 FecDecode::FecDecode(const int32_t &timeout_ms) : Sptr2TimeoutMap_(new TimeOutMap(timeout_ms)),
-                                                  ready_seqs_nums_(0) {}
+                                                  ready_seqs_nums_(0) {
+    output_unit_.data = nullptr;
+    output_unit_.max_len = 0;
+    output_unit_.actural_len = 0;
+    output_unit_.last_process_seq = -1;
+    output_unit_.last_process_index = -1;
+    output_unit_.ready_for_output = false;
+}
+
+FecDecode::~FecDecode() {
+    output_unit_.actural_len = 0;
+    output_unit_.max_len = 0;
+    free(output_unit_.data);
+};
 
 int32_t FecDecode::Input(const char *input_data_pkg, int32_t length) {
-    if (length <= fec_encode_head_length_ || input_data_pkg == nullptr)
+    if (length < sizeof(unique_header_) || input_data_pkg == nullptr)
         return -1;
-    uint16_t seq = read_u16(input_data_pkg);
-    uint16_t package_length = read_u16(input_data_pkg + 2);
-    auto data_pkg_num = static_cast<int32_t>(input_data_pkg[4]);
-    auto redundant_pkg_num = static_cast<int32_t>(input_data_pkg[5]);
-    auto index = static_cast<int32_t>(input_data_pkg[6]);
+    uint32_t unique_header = read_u32(input_data_pkg);
+    if (unique_header != unique_header_)
+        return DealUnEncodeData(input_data_pkg, length);
+    if(length < fec_encode_head_length_)
+        return -1;
+    uint16_t seq = read_u16(input_data_pkg + 4);
+    uint16_t package_length = read_u16(input_data_pkg + 6);
+    auto data_pkg_num = static_cast<int32_t>(input_data_pkg[8]);
+    auto redundant_pkg_num = static_cast<int32_t>(input_data_pkg[9]);
+    auto index = static_cast<int32_t>(input_data_pkg[10]);
     if (index == 0 || index > (data_pkg_num + redundant_pkg_num))
         return -1;
     ///由于索引是从1开始的,所以这里需要做一个减法操作
@@ -31,7 +61,7 @@ int32_t FecDecode::Input(const char *input_data_pkg, int32_t length) {
         return 1;
     char *data = (char *) malloc((length + 1));
     bzero(data, (length + 1));
-    memcpy(data, input_data_pkg + fec_encode_head_length_, length+1);
+    memcpy(data, input_data_pkg + fec_encode_head_length_, length + 1);
     std::lock_guard<std::mutex> lck(seq_mutex_);
     seq2data_pkgs_num_[seq] = data_pkg_num;
     seq2redundant_data_pkgs_num_[seq] = redundant_pkg_num;
@@ -76,32 +106,86 @@ int32_t FecDecode::Input(const char *input_data_pkg, int32_t length) {
         free(wait_decode_data);
         seq2ready_for_output_[seq] = true;
         ready_seqs_nums_++;
-        return 1;
+        return seq2max_data_pkg_length_[seq];
     }
     if (seq2data_pkgs_.size() > 50)
         ClearTimeoutDatas();
     return 0;
 }
 
-int32_t FecDecode::Output(std::vector<char *> &data_pkgs, std::vector<int32_t> &length) {
+int32_t FecDecode::DealUnEncodeData(const char *input_data_pkg, int32_t length) {
+    if (input_data_pkg == nullptr || read_u32_r(input_data_pkg) != unique_header_)
+        return -2;
+    std::lock_guard<std::mutex> lck(output_unit_mutex_);
+    auto ret = output_unit_.LargerMem(length);
+    if (ret < 0)
+        return ret;
+    memcpy(output_unit_.data, input_data_pkg + 4, length - 4);
+    output_unit_.actural_len = length - 4;
+    output_unit_.ready_for_output = true;
+    return output_unit_.actural_len;
+}
+
+int32_t FecDecode::Output(char *recv_buf, int32_t length) {
+    {
+        std::lock_guard<std::mutex> lck(output_unit_mutex_);
+        if (output_unit_.ready_for_output) {
+            if (recv_buf == nullptr || length < output_unit_.actural_len)
+                return -2;
+            memcpy(recv_buf, output_unit_.data, output_unit_.actural_len);
+            output_unit_.actural_len = 0;
+            output_unit_.ready_for_output = false;
+            auto ret = SearchForNextReadySeq(INT32_MAX);
+            if(ret <= 0)
+                return ret;
+            output_unit_.last_process_seq = ret;
+            output_unit_.last_process_index = 0;
+            return seq2data_pkgs_length_[ret][0];
+        }
+    }
     if (ready_seqs_nums_ == 0) {
         ClearTimeoutDatas();
         return -1;
     }
-    std::lock_guard<std::mutex> lck(seq_mutex_);
-    for (auto iter = seq2ready_for_output_.begin(); iter != seq2ready_for_output_.end(); ++iter) {
-        if (iter->second) {
-            data_pkgs = seq2data_pkgs_[iter->first];
-            length = seq2data_pkgs_length_[iter->first];
-            --ready_seqs_nums_;
-            ///不需要管这个iter->first对应的包,在ClearTimeoutDatas会清理这些包以及相关的数据
-            ///但是需要下面这句话,否则在ClearTimeoutDatas里面不会清除对应数据
-            seq2ready_for_output_[iter->first] = false;
-//            RemoveSeqRespondData(iter->first);
-            return ready_seqs_nums_;
+    {
+        std::lock_guard<std::mutex> lck1(((&seq_mutex_) < (&output_unit_mutex_)) ? seq_mutex_ : output_unit_mutex_);
+        std::lock_guard<std::mutex> lck2(((&seq_mutex_) < (&output_unit_mutex_)) ? output_unit_mutex_ : seq_mutex_);
+        if (output_unit_.last_process_seq != -1 && seq2ready_for_output_[output_unit_.last_process_seq]) {
+            bzero(recv_buf, length);
+            memcpy(recv_buf, seq2data_pkgs_[output_unit_.last_process_seq][output_unit_.last_process_index],
+                   seq2data_pkgs_length_[output_unit_.last_process_seq][output_unit_.last_process_index]);
+            ++output_unit_.last_process_index;
+            if (output_unit_.last_process_index == seq2data_pkgs_[output_unit_.last_process_seq].size()) {
+                seq2ready_for_output_[output_unit_.last_process_seq] = false;
+                --ready_seqs_nums_;
+                auto ret = SearchForNextReadySeq(INT32_MAX);
+                if (ret <= 0)
+                    return ret;
+                output_unit_.last_process_seq = ret;
+                output_unit_.last_process_index = 0;
+                return seq2data_pkgs_length_[ret][0];
+            } else
+                return seq2data_pkgs_length_[output_unit_.last_process_seq][output_unit_.last_process_index];
         }
+        auto ret = SearchForNextReadySeq(length);
+        if (ret <= 0)
+            return ret;
+        output_unit_.last_process_seq = ret;
+        output_unit_.last_process_index = 0;
     }
-    return -1;
+    return Output(recv_buf, length);
+}
+
+int32_t FecDecode::SearchForNextReadySeq(const int32_t &least_len) {
+    if (ready_seqs_nums_ == 0) {
+        ClearTimeoutDatas();
+        return 0;
+    }
+    for (auto iter = seq2ready_for_output_.begin(); iter != seq2ready_for_output_.end(); ++iter) {
+        if (iter->second && seq2max_data_pkg_length_[iter->first] <= least_len)
+            return iter->first;
+    }
+    return 0;
 }
 
 void FecDecode::ClearTimeoutDatas() {
