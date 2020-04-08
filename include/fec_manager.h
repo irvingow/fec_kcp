@@ -21,7 +21,6 @@ class FecEncodeManager{
  private:
   std::shared_ptr<connection_info_t> sp_conn_;
   std::shared_ptr<FecEncode> sp_fec_encoder_;
-  std::mutex fec_manager_mutex_;
 };
 
 #endif //FEC_KCP_FEC_MANAGER_H

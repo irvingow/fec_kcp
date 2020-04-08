@@ -13,7 +13,6 @@ FecEncodeManager::FecEncodeManager(std::shared_ptr<connection_info_t> sp_conn,
       sp_fec_encoder_(std::move(sp_fec_encoder)) {}
 
 int32_t FecEncodeManager::Input(const char *data, const int32_t &length) {
-    std::lock_guard<std::mutex> lck(fec_manager_mutex_);
     auto ret = sp_fec_encoder_->Input(data, length);
     if (ret < 0)
         return -1;
